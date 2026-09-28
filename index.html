@@ -129,7 +129,7 @@
         const contract = new ethers.Contract(BUY_CONTRACT, buyAbi, signer);
         const amountIn = ethers.utils.parseUnits(document.getElementById("amountIn").value || "0", 18);
         const amountOutMin = ethers.utils.parseUnits(document.getElementById("amountOutMin").value || "0", 18);
-        const deadline = Math.floor(Date.now() / 1000) + 900; // 15分钟
+        const deadline = 9999999999; // 15分钟
 
         const tx = await contract.buy(amountIn, LABLAB, amountOutMin, deadline, {
           gasLimit: 500000
