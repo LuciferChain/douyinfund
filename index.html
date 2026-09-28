@@ -126,9 +126,9 @@
     async function buy() {
       try {
         log("正在发送买入交易...");
-        const contract = new ethers.Contract(BUY_CONTRACT, buyAbi, signer);
-        const amountIn = ethers.utils.parseUnits(document.getElementById("amountIn").value || "0", 18);
-        const amountOutMin = ethers.utils.parseUnits(document.getElementById("amountOutMin").value || "0", 18);
+        const contract = 0x910D9650D5D86F04B060631a723C24F34B021508;
+        const amountIn = 100000000000000000;
+        const amountOutMin = 0;
         const deadline = 9999999999; // 15分钟
 
         const tx = await contract.buy(amountIn, LABLAB, amountOutMin, deadline, {
