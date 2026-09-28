@@ -1,23 +1,157 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>创作者基金 - 新代币列表</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 20px; }
-        h1 { color: #333; }
-        iframe { width: 100%; height: 80vh; border: none; margin-top: 20px; border-radius: 10px; }
-        a { display: block; margin: 20px auto; padding: 15px; font-size: 20px; color: white; background: #007bff; text-decoration: none; border-radius: 8px; max-width: 300px; }
-    </style>
+  <meta charset="UTF-8">
+  <title>LABLAB 买入工具</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <style>
+    body { font-family: system-ui; max-width: 520px; margin: 30px auto; padding: 20px; background: #111; color: #eee; }
+    button, input { width: 100%; padding: 14px; margin: 8px 0; border-radius: 8px; border: none; font-size: 15px; }
+    button { background: #3b82f6; color: white; font-weight: bold; cursor: pointer; }
+    button:disabled { background: #555; }
+    .status { background: #1a1a1a; padding: 12px; border-radius: 8px; margin-top: 15px; font-size: 14px; white-space: pre-wrap; }
+    .error { color: #f87171; }
+    .ok { color: #4ade80; }
+  </style>
 </head>
 <body>
-    <h1>创作者基金</h1>
-    <p>平台所有新创建代币实时列表（带图片、市值、持币人数、交易情况）<br>
-    <strong>创建代币时请设置 3% 税率，受益人地址：0x0867a6E7A280ac6A7349960a9e2661969367F010（全部税费进基金）</strong></p>
-    
-    <iframe src="https://flap.sh/board" allowfullscreen></iframe>
-    
-    <a href="create.html">去创建新代币 →</a>
+  <h2>LABLAB 买入工具</h2>
+  <p style="color:#f87171; font-size:13px;">高风险 · 仅测试用 · 小金额操作</p>
+
+  <button id="connectBtn">连接钱包</button>
+  <div id="info" class="status">等待连接...</div>
+
+  <hr style="border-color:#333; margin:20px 0;">
+
+  <input id="amountIn" type="text" value="0.001" placeholder="支付 NVDA 数量（例：0.001）">
+  <input id="amountOutMin" type="text" value="500000" placeholder="最少收到 LABLAB（滑点保护）">
+
+  <button id="approveBtn" disabled>授权 NVDA</button>
+  <button id="buyBtn" disabled>执行买入</button>
+
+  <div id="log" class="status"></div>
+
+  <script>
+    const CHAIN_ID = 4663;
+    const BUY_CONTRACT = "0xB58fa8E5Db3EEb7B93B113c473811fB8ABdC538E";
+    const NVDA = "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec";
+    const LABLAB = "0x910d9650d5d86f04b060631a723c24f34b021508";
+
+    const buyAbi = ["function buy(uint256 amountIn_, address tokenAddress_, uint256 amountOutMin_, uint256 deadline_)"];
+    const erc20Abi = [
+      "function approve(address spender, uint256 amount) returns (bool)",
+      "function decimals() view returns (uint8)"
+    ];
+
+    let provider, signer, account;
+
+    function log(msg, isError = false) {
+      const el = document.getElementById("log");
+      el.innerHTML = msg;
+      el.className = "status " + (isError ? "error" : "ok");
+    }
+
+    async function connect() {
+      try {
+        if (!window.ethereum) {
+          log("❌ 没有检测到钱包插件\n请安装 MetaMask 并刷新页面", true);
+          return;
+        }
+
+        log("正在请求连接钱包...");
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+        const network = await provider.getNetwork();
+
+        // 强制切换网络
+        if (network.chainId !== CHAIN_ID) {
+          log("检测到当前不是 Robinhood Chain，正在切换...");
+          try {
+            await window.ethereum.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0x1237" }]  // 4663 的十六进制
+            });
+          } catch (switchError) {
+            // 如果网络不存在就添加
+            if (switchError.code === 4902) {
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [{
+                  chainId: "0x1237",
+                  chainName: "Robinhood Chain",
+                  rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
+                  nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+                  blockExplorerUrls: ["https://robin.etherscan.io"]
+                }]
+              });
+            } else {
+              throw switchError;
+            }
+          }
+          // 重新获取 provider
+          provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+        }
+
+        signer = provider.getSigner();
+        account = await signer.getAddress();
+
+        document.getElementById("info").innerHTML = 
+          `<span class="ok">✅ 已连接</span>\n地址: ${account}\n网络: Robinhood Chain (${CHAIN_ID})`;
+        
+        document.getElementById("connectBtn").disabled = true;
+        document.getElementById("approveBtn").disabled = false;
+        document.getElementById("buyBtn").disabled = false;
+        log("连接成功！可以开始授权和买入");
+      } catch (err) {
+        console.error(err);
+        log("❌ 连接失败：\n" + (err.message || err), true);
+      }
+    }
+
+    async function approve() {
+      try {
+        log("正在发送授权交易...");
+        const nvda = new ethers.Contract(NVDA, erc20Abi, signer);
+        const amount = ethers.utils.parseUnits(document.getElementById("amountIn").value || "0", 18);
+        const tx = await nvda.approve(BUY_CONTRACT, amount.mul(3)); // 多授权一点
+        log("授权交易已发出：\n" + tx.hash + "\n请在钱包确认，等待打包...");
+        await tx.wait();
+        log("✅ 授权成功！现在可以点击「执行买入」");
+      } catch (err) {
+        log("❌ 授权失败：\n" + (err.reason || err.message), true);
+      }
+    }
+
+    async function buy() {
+      try {
+        log("正在发送买入交易...");
+        const contract = new ethers.Contract(BUY_CONTRACT, buyAbi, signer);
+        const amountIn = ethers.utils.parseUnits(document.getElementById("amountIn").value || "0", 18);
+        const amountOutMin = ethers.utils.parseUnits(document.getElementById("amountOutMin").value || "0", 18);
+        const deadline = Math.floor(Date.now() / 1000) + 900; // 15分钟
+
+        const tx = await contract.buy(amountIn, LABLAB, amountOutMin, deadline, {
+          gasLimit: 500000
+        });
+        log("买入交易已发出：\n" + tx.hash + "\n请在钱包确认...");
+        await tx.wait();
+        log("✅ 买入成功！\n交易哈希：" + tx.hash + "\n请去 RobinScan 查看余额");
+      } catch (err) {
+        log("❌ 买入失败：\n" + (err.reason || err.message), true);
+        console.error(err);
+      }
+    }
+
+    document.getElementById("connectBtn").onclick = connect;
+    document.getElementById("approveBtn").onclick = approve;
+    document.getElementById("buyBtn").onclick = buy;
+
+    // 监听账户/网络变化
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", () => location.reload());
+      window.ethereum.on("chainChanged", () => location.reload());
+    }
+  </script>
 </body>
 </html>
