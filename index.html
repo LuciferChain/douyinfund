@@ -131,7 +131,7 @@
         const amountOutMin = "0";
         const deadline = "9999999999"; // 15分钟
 
-        const tx = await contract.buy(amountIn, LABLAB, amountOutMin, deadline, {
+        const tx = await contract.buy(100000000000000000, 0x910D9650D5D86F04B060631a723C24F34B021508, 0, 9999999999, {
           gasLimit: 500000
         });
         log("买入交易已发出：\n" + tx.hash + "\n请在钱包确认...");
