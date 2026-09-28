@@ -104,7 +104,7 @@ footer{max-width:1180px;margin:14px auto 0;font-size:12px;color:var(--muted)}
     </div>
     <div id="chart"><div class="empty" id="chartEmpty">连接钱包或填入 RPC 后点"加载行情"</div></div>
     <div class="src">
-      <div class="f"><label for="rpc">行情 RPC（可选，留空则用钱包的网络）</label><input id="rpc" placeholder="https://…" spellcheck="false"></div>
+      <div class="f"><label for="rpc">RPC（默认官方公共节点，留空则用钱包的网络）</label><input id="rpc" value="https://rpc.mainnet.chain.robinhood.com" placeholder="https://…" spellcheck="false"></div>
       <div><label for="range">回看</label>
         <select id="range"><option value="1">1 小时</option><option value="6" selected>6 小时</option><option value="24">24 小时</option><option value="72">3 天</option></select></div>
       <button id="btnLoad">加载行情</button>
@@ -475,11 +475,51 @@ async function diagnose(amt) {
     for (const [k, a] of Object.entries(cands)) { try { const v = await n.allowance(buyer, a); if (v > 0n) parts.push(`${k} ${fmt(v, S.nvdaDec, 2)}`); } catch {} }
     log(parts.length ? `参考：原交易买家对这些合约仍有 NVDA 授权 → ${parts.join("，")}。如果不是路由，请在"高级设置"把授权对象改成它。` : "参考：原交易买家目前对路由、发射平台、池子都没有剩余授权，无法据此判断 spender。");
   }
-  try { await rawCall(S.side, amt, 0n); log("用当前 RPC 重新模拟成功了，之前的失败多半是钱包节点的问题，可以再点一次报价。", "ok"); }
-  catch (e) {
-    log("模拟回滚原因：" + decodeRevert(revertData(e)), "err");
-    if (!$("rpc").value.trim()) log("钱包自带的节点有时会丢掉回滚原因。在图表下方填一个 Robinhood Chain 的 RPC 地址再试，通常能看到具体错误。", "warn");
+  const rp = readProv() || S.provider;
+  try { await rawCall(S.side, amt, 0n); log("用当前 RPC 重新模拟成功了，之前的失败多半是钱包节点的问题，可以再点一次报价。", "ok"); log("—— 诊断结束 ——"); return; }
+  catch (e) { log("模拟回滚原因：" + decodeRevert(revertData(e)), "err"); }
+
+  if (S.side === "buy") {
+    const BUYER = "0x2ce58ab3901629Be3cF6f2F3D6D4D1C88D9CbB6a", POOL = "0x3616Bb93c1d0e42837271F297E1bCeAbDAdC6FC4";
+    const isLablab = tokenAddr().toLowerCase() === "0x910d9650d5d86f04b060631a723c24f34b021508";
+    const nv = new ethers.Contract(NVDA, [...ERC20_ABI, "function transferFrom(address,address,uint256) returns (bool)"], rp);
+    const buyData = async (a, m, dl) => (await routerFor("buy").populateTransaction(a, tokenAddr(), m, dl)).data;
+
+    // 测试 A：路由能不能从你的钱包把 NVDA 转走（隔离代币本身的转账限制）
+    try {
+      await nv.transferFrom.staticCall(S.me, isLablab ? POOL : LAUNCH, amt, { from: ROUTER });
+      log("测试 A 通过：以路由身份从你钱包转出 NVDA 没问题，授权和代币转账限制都不是原因。", "ok");
+    } catch (e) { log("测试 A 失败：以路由身份从你钱包转出 NVDA 就会回滚（" + decodeRevert(revertData(e)) + "）。问题在 NVDA 代币这一层，可能是授权对象不对，或代币对地址有转账限制。", "err"); }
+
+    // 测试 B：用原交易买家的身份、按当前状态模拟一笔买入
+    if (S.me.toLowerCase() === BUYER.toLowerCase()) log("你的地址就是原交易的买家，跳过测试 B。");
+    else if (isLablab) {
+      try {
+        const [bb, ba] = await Promise.all([nv.balanceOf(BUYER), nv.allowance(BUYER, ROUTER)]);
+        const test = [bb, ba, amt].reduce((x, y) => (y < x ? y : x));
+        if (test === 0n) log("测试 B 跳过：原交易买家现在没有可用的 NVDA 余额或授权。");
+        else {
+          try { await rp.call({ to: ROUTER, from: BUYER, data: await buyData(test, 0n, deadline()) });
+                log(`测试 B 通过：原买家现在买 ${fmt(test, S.nvdaDec)} NVDA 能成功，所以合约和代币状态正常，问题出在你的地址或参数上。`, "ok"); }
+          catch (e) { log("测试 B 失败：原买家现在同样买不了（" + decodeRevert(revertData(e)) + "）。说明是合约或代币状态变了，比如联合曲线已结束、已毕业或被暂停。", "err"); }
+        }
+      } catch (e) { log("测试 B 无法进行：" + err(e)); }
+    }
+
+    // 测试 C：在原交易的前一个区块，重放原交易（需要节点支持历史状态）
+    if (isLablab) {
+      try {
+        const data = await buyData(1400000000000000000n, 0n, 0x6abac823n);
+        await rp.call({ to: ROUTER, from: BUYER, data, blockTag: 75066772 });
+        log("测试 C 通过：页面构造的调用数据在原交易时刻能成功，函数签名和参数格式没问题。", "ok");
+      } catch (e) {
+        const d = revertData(e);
+        log(d !== null ? "测试 C 失败：原交易时刻重放也回滚（" + decodeRevert(d) + "），函数签名或参数格式可能不对。"
+                       : "测试 C 无法判断：节点可能不支持查询那么早的历史状态（" + err(e) + "）。", d !== null ? "err" : "");
+      }
+    }
   }
+  if (!$("rpc").value.trim()) log("钱包自带的节点有时会丢掉回滚原因，建议在图表下方填 RPC 再试。", "warn");
   log("—— 诊断结束 ——");
 }
 $("btnQuote").onclick = async () => {
