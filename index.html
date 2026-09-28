@@ -1,157 +1,252 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <title>LABLAB 买入工具</title>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-  <style>
-    body { font-family: system-ui; max-width: 520px; margin: 30px auto; padding: 20px; background: #111; color: #eee; }
-    button, input { width: 100%; padding: 14px; margin: 8px 0; border-radius: 8px; border: none; font-size: 15px; }
-    button { background: #3b82f6; color: white; font-weight: bold; cursor: pointer; }
-    button:disabled { background: #555; }
-    .status { background: #1a1a1a; padding: 12px; border-radius: 8px; margin-top: 15px; font-size: 14px; white-space: pre-wrap; }
-    .error { color: #f87171; }
-    .ok { color: #4ade80; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>买入下单 · Robinhood Chain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<style>
+:root{
+  --bg:#E9EDF2; --paper:#FFFFFF; --ink:#16202E; --muted:#5B6778; --rule:#C9D1DB;
+  --act:#2B4BF2; --act-ink:#FFFFFF; --ok:#1E7A4C; --warn:#B4541A; --err:#B3261E;
+  --field:#F4F6F9;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#10151D;--paper:#1A212C;--ink:#E6EBF2;--muted:#9AA6B6;--rule:#2E3846;
+    --act:#6F86FF;--act-ink:#0D1320;--ok:#5BC08D;--warn:#E39A62;--err:#F08A82;--field:#141A23;}
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 "IBM Plex Sans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;padding:32px 16px 48px}
+.ticket{max-width:540px;margin:0 auto;background:var(--paper);border:1px solid var(--rule);border-radius:6px;position:relative}
+.ticket::before,.ticket::after{content:"";position:absolute;top:118px;width:18px;height:18px;border-radius:50%;background:var(--bg);border:1px solid var(--rule)}
+.ticket::before{left:-10px}.ticket::after{right:-10px}
+header{padding:22px 24px 20px;border-bottom:1px dashed var(--rule)}
+h1{font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.route{display:flex;align-items:baseline;gap:12px;margin-top:16px;font-size:28px;font-weight:600;letter-spacing:-.02em}
+.route .arrow{color:var(--muted);font-weight:400}
+.body{padding:20px 24px 8px}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+.field{margin-bottom:16px}
+input{width:100%;font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:4px;padding:10px 12px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr 120px;gap:12px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:4px 0 18px;font-size:14px}
+dt{color:var(--muted)} dd{margin:0;text-align:right;overflow-wrap:anywhere}
+ol.steps{list-style:none;margin:0;padding:0 24px 20px;counter-reset:s}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--rule)}
+ol.steps li::before{content:counter(s);width:24px;height:24px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;font-size:12px;color:var(--muted)}
+ol.steps li.done::before{content:"✓";background:var(--ok);border-color:var(--ok);color:var(--paper)}
+button{font:inherit;font-weight:500;width:100%;padding:11px 14px;border-radius:4px;cursor:pointer;border:1px solid var(--act);background:transparent;color:var(--act)}
+button.primary{background:var(--act);color:var(--act-ink)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.warn{color:var(--warn);font-size:13px;margin:0 0 14px}
+.log{border-top:1px dashed var(--rule);padding:14px 24px 20px;font-size:13px;max-height:260px;overflow:auto}
+.log p{margin:0 0 6px;color:var(--muted);overflow-wrap:anywhere}
+.log p.ok{color:var(--ok)} .log p.err{color:var(--err)} .log p.warn{color:var(--warn)}
+.log a{color:var(--act)}
+footer{max-width:540px;margin:16px auto 0;font-size:12px;color:var(--muted)}
+@media (max-width:420px){.row{grid-template-columns:1fr}.route{font-size:24px}}
+</style>
 </head>
 <body>
-  <h2>LABLAB 买入工具</h2>
-  <p style="color:#f87171; font-size:13px;">高风险 · 仅测试用 · 小金额操作</p>
+<main class="ticket">
+  <header>
+    <h1>买入下单</h1>
+    <p class="sub" id="wallet">钱包未连接</p>
+    <div class="route"><span>NVDA</span><span class="arrow">→</span><span id="tokSym">LABLAB</span></div>
+  </header>
 
-  <button id="connectBtn">连接钱包</button>
-  <div id="info" class="status">等待连接...</div>
+  <div class="body">
+    <div class="field">
+      <label for="token">要买的代币合约</label>
+      <input id="token" value="0x910d9650d5d86f04b060631a723c24f34b021508" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="amount">花费 NVDA</label>
+        <input id="amount" value="1.4" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="slip">可接受滑点 %</label>
+        <input id="slip" value="3" inputmode="decimal">
+      </div>
+    </div>
 
-  <hr style="border-color:#333; margin:20px 0;">
+    <dl>
+      <dt>NVDA 余额</dt><dd id="bal">—</dd>
+      <dt>已授权给路由</dt><dd id="allow">—</dd>
+      <dt>预计收到</dt><dd id="quote">先完成报价</dd>
+      <dt>最少收到</dt><dd id="minOut">—</dd>
+    </dl>
+    <p class="warn" id="chainWarn" hidden></p>
+  </div>
 
-  <input id="amountIn" type="text" value="0.001" placeholder="支付 NVDA 数量（例：0.001）">
-  <input id="amountOutMin" type="text" value="500000" placeholder="最少收到 LABLAB（滑点保护）">
+  <ol class="steps">
+    <li id="s1"><button class="primary" id="btnConnect">连接钱包</button></li>
+    <li id="s2"><button id="btnApprove" disabled>授权 NVDA</button></li>
+    <li id="s3"><button id="btnQuote" disabled>模拟报价</button></li>
+    <li id="s4"><button class="primary" id="btnBuy" disabled>发送买入交易</button></li>
+  </ol>
 
-  <button id="approveBtn" disabled>授权 NVDA</button>
-  <button id="buyBtn" disabled>执行买入</button>
+  <div class="log" id="log" aria-live="polite"><p>在下方记录每一步的结果。</p></div>
+</main>
+<footer>路由合约 0xB58fa8E5…C538E。每笔交易都会先在钱包里弹窗确认，本页面不接触你的私钥。先用小金额试。</footer>
 
-  <div id="log" class="status"></div>
+<script>
+const ROUTER = "0xB58fa8E5Db3EEb7B93B113c473811fB8ABdC538E";
+const NVDA   = "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec";
+const EXPLORER = "https://robin.etherscan.io";
+const ROUTER_ABI = ["function buy(uint256 amountIn_, address tokenAddress_, uint256 amountOutMin_, uint256 deadline_)"];
+const ERC20_ABI = [
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)"
+];
 
-  <script>
-    const CHAIN_ID = 4663;
-    const BUY_CONTRACT = "0xB58fa8E5Db3EEb7B93B113c473811fB8ABdC538E";
-    const NVDA = "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec";
-    const LABLAB = "0x910d9650d5d86f04b060631a723c24f34b021508";
+const $ = id => document.getElementById(id);
+let provider, signer, me, nvda, router, nvdaDec = 18, tok, tokDec = 18, tokSym = "?", quoted = null;
 
-    const buyAbi = ["function buy(uint256 amountIn_, address tokenAddress_, uint256 amountOutMin_, uint256 deadline_)"];
-    const erc20Abi = [
-      "function approve(address spender, uint256 amount) returns (bool)",
-      "function decimals() view returns (uint8)"
-    ];
+function log(msg, cls = "", hash) {
+  const p = document.createElement("p");
+  p.className = cls;
+  p.textContent = msg + " ";
+  if (hash) { const a = document.createElement("a"); a.href = `${EXPLORER}/tx/${hash}`; a.target = "_blank"; a.rel = "noopener"; a.textContent = "在 RobinScan 查看"; p.append(a); }
+  $("log").prepend(p);
+}
+const fmt = (v, d) => Number(ethers.formatUnits(v, d)).toLocaleString("zh-CN", { maximumFractionDigits: 6 });
+const amountIn = () => ethers.parseUnits(($("amount").value || "0").trim(), nvdaDec);
+const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
 
-    let provider, signer, account;
+async function loadToken() {
+  const addr = $("token").value.trim();
+  if (!ethers.isAddress(addr)) { log("代币地址格式不对。", "err"); return false; }
+  tok = new ethers.Contract(addr, ERC20_ABI, provider);
+  try { [tokDec, tokSym] = await Promise.all([tok.decimals(), tok.symbol()]); tokDec = Number(tokDec); }
+  catch { log("读不到这个代币的 symbol/decimals，确认地址和网络是否正确。", "err"); return false; }
+  $("tokSym").textContent = tokSym;
+  return true;
+}
 
-    function log(msg, isError = false) {
-      const el = document.getElementById("log");
-      el.innerHTML = msg;
-      el.className = "status " + (isError ? "error" : "ok");
+async function refresh() {
+  const [bal, allow] = await Promise.all([nvda.balanceOf(me), nvda.allowance(me, ROUTER)]);
+  $("bal").textContent = fmt(bal, nvdaDec);
+  $("allow").textContent = fmt(allow, nvdaDec);
+  let need = 0n; try { need = amountIn(); } catch {}
+  const enough = allow >= need && need > 0n;
+  $("s2").classList.toggle("done", enough);
+  $("btnApprove").disabled = enough;
+  $("btnQuote").disabled = !enough;
+  if (bal < need) log("NVDA 余额不足以支付这笔金额。", "warn");
+}
+
+function resetQuote() {
+  quoted = null;
+  $("quote").textContent = "先完成报价"; $("minOut").textContent = "—";
+  $("s3").classList.remove("done"); $("btnBuy").disabled = true;
+}
+
+$("btnConnect").onclick = async () => {
+  if (!window.ethereum) { log("没检测到浏览器钱包。请安装 MetaMask 等钱包，并通过 http://localhost 打开此页面。", "err"); return; }
+  try {
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = await provider.getSigner(); me = await signer.getAddress();
+    const net = await provider.getNetwork();
+    $("wallet").textContent = `${me.slice(0, 6)}…${me.slice(-4)} · 链 ID ${net.chainId}`;
+    const code = await provider.getCode(ROUTER);
+    if (code === "0x") {
+      $("chainWarn").hidden = false;
+      $("chainWarn").textContent = "当前网络上找不到路由合约，钱包可能没切到 Robinhood Chain 主网。切换后刷新页面。";
+      log("当前网络上路由合约不存在。", "err"); return;
     }
+    nvda = new ethers.Contract(NVDA, ERC20_ABI, signer);
+    router = new ethers.Contract(ROUTER, ROUTER_ABI, signer);
+    nvdaDec = Number(await nvda.decimals());
+    if (!(await loadToken())) return;
+    $("s1").classList.add("done"); $("btnConnect").textContent = "已连接";
+    await refresh();
+    log("钱包已连接。", "ok");
+    window.ethereum.on?.("accountsChanged", () => location.reload());
+    window.ethereum.on?.("chainChanged", () => location.reload());
+  } catch (e) { log("连接失败：" + (e.shortMessage || e.message), "err"); }
+};
 
-    async function connect() {
-      try {
-        if (!window.ethereum) {
-          log("❌ 没有检测到钱包插件\n请安装 MetaMask 并刷新页面", true);
-          return;
-        }
+$("btnApprove").onclick = async () => {
+  try {
+    const amt = amountIn();
+    $("btnApprove").disabled = true;
+    log(`请求授权 ${fmt(amt, nvdaDec)} NVDA（仅本次金额）…`);
+    const tx = await nvda.approve(ROUTER, amt);
+    log("授权交易已发送，等待确认…", "", tx.hash);
+    await tx.wait(); log("授权完成。", "ok", tx.hash);
+    await refresh();
+  } catch (e) { log("授权失败：" + (e.shortMessage || e.message), "err"); $("btnApprove").disabled = false; }
+};
 
-        log("正在请求连接钱包...");
-        await window.ethereum.request({ method: "eth_requestAccounts" });
+// eth_call 模拟：amountOutMin 不超过实际成交量时调用会成功，
+// 用二分搜索找到临界值，即当前能拿到的数量。
+async function simulate(minOut) {
+  try { await router.buy.staticCall(amountIn(), tok.target, minOut, deadline()); return true; }
+  catch { return false; }
+}
 
-        provider = new ethers.providers.Web3Provider(window.ethereum, "any");
-        const network = await provider.getNetwork();
-
-        // 强制切换网络
-        if (network.chainId !== CHAIN_ID) {
-          log("检测到当前不是 Robinhood Chain，正在切换...");
-          try {
-            await window.ethereum.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x1237" }]  // 4663 的十六进制
-            });
-          } catch (switchError) {
-            // 如果网络不存在就添加
-            if (switchError.code === 4902) {
-              await window.ethereum.request({
-                method: "wallet_addEthereumChain",
-                params: [{
-                  chainId: "0x1237",
-                  chainName: "Robinhood Chain",
-                  rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
-                  nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-                  blockExplorerUrls: ["https://robin.etherscan.io"]
-                }]
-              });
-            } else {
-              throw switchError;
-            }
-          }
-          // 重新获取 provider
-          provider = new ethers.providers.Web3Provider(window.ethereum, "any");
-        }
-
-        signer = provider.getSigner();
-        account = await signer.getAddress();
-
-        document.getElementById("info").innerHTML = 
-          `<span class="ok">✅ 已连接</span>\n地址: ${account}\n网络: Robinhood Chain (${CHAIN_ID})`;
-        
-        document.getElementById("connectBtn").disabled = true;
-        document.getElementById("approveBtn").disabled = false;
-        document.getElementById("buyBtn").disabled = false;
-        log("连接成功！可以开始授权和买入");
-      } catch (err) {
-        console.error(err);
-        log("❌ 连接失败：\n" + (err.message || err), true);
-      }
+$("btnQuote").onclick = async () => {
+  $("btnQuote").disabled = true; resetQuote();
+  try {
+    if (!(await loadToken())) return;
+    log("模拟调用中（会发起若干次只读请求，不花 gas）…");
+    if (!(await simulate(0n))) {
+      let reason = "";
+      try { await router.buy.staticCall(amountIn(), tok.target, 0n, deadline()); } catch (e) { reason = e.shortMessage || e.reason || e.message; }
+      log("即使最少收到设为 0 模拟也失败了：" + reason, "err"); return;
     }
-
-    async function approve() {
-      try {
-        log("正在发送授权交易...");
-        const nvda = new ethers.Contract(NVDA, erc20Abi, signer);
-        const amount = ethers.utils.parseUnits(document.getElementById("amountIn").value || "0", 18);
-        const tx = await nvda.approve(BUY_CONTRACT, amount.mul(3)); // 多授权一点
-        log("授权交易已发出：\n" + tx.hash + "\n请在钱包确认，等待打包...");
-        await tx.wait();
-        log("✅ 授权成功！现在可以点击「执行买入」");
-      } catch (err) {
-        log("❌ 授权失败：\n" + (err.reason || err.message), true);
-      }
+    let lo = 0n, hi = 10n ** BigInt(tokDec);
+    for (let i = 0; i < 200 && await simulate(hi); i++) { lo = hi; hi *= 2n; }
+    for (let i = 0; i < 80 && hi - lo > 1n; i++) {
+      if (lo > 0n && (hi - lo) * 100000n <= lo) break;       // 精度到 0.001%
+      const mid = (lo + hi) / 2n;
+      (await simulate(mid)) ? lo = mid : hi = mid;
     }
+    const slip = Math.min(Math.max(parseFloat($("slip").value) || 0, 0), 50);
+    quoted = lo;
+    const min = lo * BigInt(Math.round((100 - slip) * 100)) / 10000n;
+    $("quote").textContent = `${fmt(lo, tokDec)} ${tokSym}`;
+    $("minOut").textContent = `${fmt(min, tokDec)} ${tokSym}`;
+    $("minOut").dataset.raw = min.toString();
+    $("s3").classList.add("done"); $("btnBuy").disabled = false;
+    log(`报价完成：约 ${fmt(lo, tokDec)} ${tokSym}，滑点 ${slip}% 后最少 ${fmt(min, tokDec)}。报价随价格变化，尽快下单。`, "ok");
+  } catch (e) { log("报价出错：" + (e.shortMessage || e.message), "err"); }
+  finally { $("btnQuote").disabled = false; }
+};
 
-    async function buy() {
-      try {
-        log("正在发送买入交易...");
-        const contract = "0x910D9650D5D86F04B060631a723C24F34B021508";
-        const amountIn = "100000000000000000";
-        const amountOutMin = "0";
-        const deadline = "9999999999"; // 15分钟
+$("btnBuy").onclick = async () => {
+  if (quoted === null) return;
+  const min = BigInt($("minOut").dataset.raw);
+  $("btnBuy").disabled = true;
+  try {
+    const before = await tok.balanceOf(me);
+    log(`发送买入：${$("amount").value} NVDA，最少 ${fmt(min, tokDec)} ${tokSym}…`);
+    const tx = await router.buy(amountIn(), tok.target, min, deadline());
+    log("买入交易已发送，等待确认…", "", tx.hash);
+    const r = await tx.wait();
+    const got = (await tok.balanceOf(me)) - before;
+    log(`成交，区块 ${r.blockNumber}，实际收到 ${fmt(got, tokDec)} ${tokSym}。`, "ok", tx.hash);
+    $("s4").classList.add("done");
+    resetQuote(); await refresh();
+  } catch (e) { log("买入失败：" + (e.shortMessage || e.message), "err"); $("btnBuy").disabled = false; }
+};
 
-        const tx = await contract.buy(100000000000000000, 0x910D9650D5D86F04B060631a723C24F34B021508, 0, 9999999999, {
-          gasLimit: 500000
-        });
-        log("买入交易已发出：\n" + tx.hash + "\n请在钱包确认...");
-        await tx.wait();
-        log("✅ 买入成功！\n交易哈希：" + tx.hash + "\n请去 RobinScan 查看余额");
-      } catch (err) {
-        log("❌ 买入失败：\n" + (err.reason || err.message), true);
-        console.error(err);
-      }
-    }
-
-    document.getElementById("connectBtn").onclick = connect;
-    document.getElementById("approveBtn").onclick = approve;
-    document.getElementById("buyBtn").onclick = buy;
-
-    // 监听账户/网络变化
-    if (window.ethereum) {
-      window.ethereum.on("accountsChanged", () => location.reload());
-      window.ethereum.on("chainChanged", () => location.reload());
-    }
-  </script>
+["amount", "token", "slip"].forEach(id => $(id).addEventListener("input", () => { if (me) { resetQuote(); if (id !== "slip") refresh().catch(() => {}); } }));
+</script>
 </body>
 </html>
