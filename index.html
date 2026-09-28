@@ -143,14 +143,17 @@ footer{max-width:1180px;margin:14px auto 0;font-size:12px;color:var(--muted)}
       </div>
       <dl>
         <dt id="balLabel">NVDA 余额</dt><dd id="bal">—</dd>
-        <dt>已授权给路由</dt><dd id="allow">—</dd>
+        <dt>已授权额度</dt><dd id="allow">—</dd>
         <dt>预计收到</dt><dd id="quote">先完成报价</dd>
         <dt>最少收到</dt><dd id="minOut">—</dd>
       </dl>
       <p class="note" id="sellNote" hidden></p>
-      <details>
-        <summary>卖出函数签名</summary>
+      <details id="adv">
+        <summary>高级设置</summary>
+        <label for="sellSig" style="margin-top:8px">卖出函数签名</label>
         <input id="sellSig" value="sell(uint256,address,uint256,uint256)" spellcheck="false">
+        <label for="spender" style="margin-top:10px">授权对象（spender）</label>
+        <input id="spender" value="0xB58fa8E5Db3EEb7B93B113c473811fB8ABdC538E" spellcheck="false">
       </details>
     </div>
     <ol class="steps">
@@ -355,6 +358,7 @@ function routerFor(side) {
   const c = new ethers.Contract(ROUTER, [`function ${sig}`], S.signer);
   return c.getFunction(sig);
 }
+const spender = () => ethers.getAddress($("spender").value.trim());
 const spendToken = () => new ethers.Contract(S.side === "buy" ? NVDA : $("token").value.trim(), ERC20_ABI, S.signer);
 const spendDec = () => S.side === "buy" ? S.nvdaDec : S.tokDec;
 const outDec = () => S.side === "buy" ? S.tokDec : S.nvdaDec;
@@ -368,7 +372,7 @@ function resetQuote() {
 async function refreshBalances() {
   if (!S.me) return;
   const t = spendToken();
-  const [bal, allow] = await Promise.all([t.balanceOf(S.me), t.allowance(S.me, ROUTER)]);
+  const [bal, allow] = await Promise.all([t.balanceOf(S.me), t.allowance(S.me, spender())]);
   S.bal = bal;
   $("bal").textContent = fmt(bal, spendDec());
   $("allow").textContent = fmt(allow, spendDec(), 2);
@@ -428,28 +432,67 @@ $("btnApprove").onclick = async () => {
   try {
     const amt = amountIn(); $("btnApprove").disabled = true;
     log(`请求授权 ${fmt(amt, spendDec())}（仅本次金额）…`);
-    const tx = await spendToken().approve(ROUTER, amt);
+    const tx = await spendToken().approve(spender(), amt);
     log("授权已发送，等待确认…", "", tx.hash); await tx.wait();
     log("授权完成。", "ok", tx.hash); await refreshBalances();
   } catch (e) { log("授权失败：" + err(e), "err"); $("btnApprove").disabled = false; }
 };
 
-// 模拟：amountOutMin 不超过实际可得数量时调用成功，二分搜索出临界值即为报价
-async function simulate(fn, amt, min) {
-  try { await fn.staticCall(amt, $("token").value.trim(), min, deadline()); return true; } catch { return false; }
+// 模拟：amountOutMin 不超过实际可得数量时调用成功，二分搜索出临界值即为报价。
+// 通过行情 RPC（若已填写）直接 eth_call，拿到钱包节点可能丢掉的 revert 原因。
+const tokenAddr = () => $("token").value.trim();
+async function rawCall(side, amt, min) {
+  const tx = await routerFor(side).populateTransaction(amt, tokenAddr(), min, deadline());
+  return (readProv() || S.provider).call({ to: ROUTER, from: S.me, data: tx.data });
+}
+async function simulate(side, amt, min) { try { await rawCall(side, amt, min); return true; } catch { return false; } }
+function revertData(e) {
+  for (const d of [e?.data, e?.info?.error?.data, e?.error?.data, e?.info?.error?.data?.data])
+    if (typeof d === "string") return d;
+  return null;
+}
+function decodeRevert(d) {
+  if (!d || d === "0x") return "合约回滚，没有返回任何原因";
+  if (d.startsWith("0x08c379a0")) return "错误信息：" + ethers.AbiCoder.defaultAbiCoder().decode(["string"], "0x" + d.slice(10))[0];
+  if (d.startsWith("0x4e487b71")) return "Panic 0x" + BigInt("0x" + d.slice(10, 74)).toString(16) + "（常见于算术溢出或除零）";
+  const known = { "0xfb8f41b2": "ERC20InsufficientAllowance（授权不足）", "0xe450d38c": "ERC20InsufficientBalance（余额不足）" };
+  return known[d.slice(0, 10)] ? "自定义错误 " + known[d.slice(0, 10)] : `自定义错误，选择器 ${d.slice(0, 10)}（可在 openchain.xyz 的签名库里查它的名字）`;
+}
+async function diagnose(amt) {
+  log("—— 诊断开始 ——");
+  const t = spendToken(), sym = S.side === "buy" ? "NVDA" : S.tokSym, dec = spendDec();
+  const [bal, allow] = await Promise.all([t.balanceOf(S.me), t.allowance(S.me, spender())]);
+  log(`${sym} 余额 ${fmt(bal, dec)}，授权给 ${spender().slice(0, 8)}… 的额度 ${fmt(allow, dec)}，本次需要 ${fmt(amt, dec)}。`, bal < amt || allow < amt ? "err" : "");
+  if (S.side === "sell") {
+    const sel = ethers.id($("sellSig").value.trim()).slice(2, 10), code = S.routerCode || "";
+    if (code.includes("706910ff")) log(code.includes(sel) ? `字节码里找到了卖出选择器 0x${sel}。` : `字节码里没有卖出选择器 0x${sel}，签名很可能不对，这会直接导致空回滚。`, code.includes(sel) ? "" : "err");
+  }
+  // 原交易的买家当时授权给了谁？查它现在对几个候选合约的剩余额度
+  if (S.side === "buy") {
+    const buyer = "0x2ce58ab3901629Be3cF6f2F3D6D4D1C88D9CbB6a", n = new ethers.Contract(NVDA, ERC20_ABI, readProv() || S.provider);
+    const cands = { "路由 0xB58f…": ROUTER, "发射平台 0x297E…": LAUNCH, "池子 0x3616…": "0x3616Bb93c1d0e42837271F297E1bCeAbDAdC6FC4" };
+    const parts = [];
+    for (const [k, a] of Object.entries(cands)) { try { const v = await n.allowance(buyer, a); if (v > 0n) parts.push(`${k} ${fmt(v, S.nvdaDec, 2)}`); } catch {} }
+    log(parts.length ? `参考：原交易买家对这些合约仍有 NVDA 授权 → ${parts.join("，")}。如果不是路由，请在"高级设置"把授权对象改成它。` : "参考：原交易买家目前对路由、发射平台、池子都没有剩余授权，无法据此判断 spender。");
+  }
+  try { await rawCall(S.side, amt, 0n); log("用当前 RPC 重新模拟成功了，之前的失败多半是钱包节点的问题，可以再点一次报价。", "ok"); }
+  catch (e) {
+    log("模拟回滚原因：" + decodeRevert(revertData(e)), "err");
+    if (!$("rpc").value.trim()) log("钱包自带的节点有时会丢掉回滚原因。在图表下方填一个 Robinhood Chain 的 RPC 地址再试，通常能看到具体错误。", "warn");
+  }
+  log("—— 诊断结束 ——");
 }
 $("btnQuote").onclick = async () => {
   $("btnQuote").disabled = true; resetQuote();
   try {
-    const fn = routerFor(S.side), amt = amountIn();
+    const amt = amountIn();
     log("模拟调用中（只读，不花 gas）…");
-    try { await fn.staticCall(amt, $("token").value.trim(), 0n, deadline()); }
-    catch (e) { log(`最少收到设为 0 时模拟也失败：${err(e)}` + (S.side === "sell" ? "。卖出签名可能不对。" : ""), "err"); return; }
+    if (!(await simulate(S.side, amt, 0n))) { log("最少收到设为 0 时模拟仍然失败，开始诊断。", "err"); await diagnose(amt); return; }
     let lo = 0n, hi = 10n ** BigInt(outDec());
-    for (let i = 0; i < 200 && await simulate(fn, amt, hi); i++) { lo = hi; hi *= 2n; }
+    for (let i = 0; i < 200 && await simulate(S.side, amt, hi); i++) { lo = hi; hi *= 2n; }
     for (let i = 0; i < 80 && hi - lo > 1n; i++) {
       if (lo > 0n && (hi - lo) * 100000n <= lo) break;
-      const mid = (lo + hi) / 2n; (await simulate(fn, amt, mid)) ? lo = mid : hi = mid;
+      const mid = (lo + hi) / 2n; (await simulate(S.side, amt, mid)) ? lo = mid : hi = mid;
     }
     const slip = Math.min(Math.max(parseFloat($("slip").value) || 0, 0), 50);
     S.quoted = lo; S.min = lo * BigInt(Math.round((100 - slip) * 100)) / 10000n;
@@ -480,6 +523,7 @@ $("btnExec").onclick = async () => {
 $("amount").addEventListener("input", () => { resetQuote(); refreshBalances().catch(() => {}); });
 $("slip").addEventListener("input", resetQuote);
 $("sellSig").addEventListener("input", () => { resetQuote(); checkSellSig(); });
+$("spender").addEventListener("change", () => { resetQuote(); refreshBalances().catch(e => log("授权对象地址无效：" + err(e), "err")); });
 $("token").addEventListener("change", () => { resetQuote(); if (S.provider || $("rpc").value.trim()) loadMarket().then(refreshBalances).catch(() => {}); });
 </script>
 </body>
