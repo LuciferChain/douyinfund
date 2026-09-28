@@ -3,250 +3,484 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>买入下单 · Robinhood Chain</title>
+<title>行情与交易 · Robinhood Chain</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{
   --bg:#E9EDF2; --paper:#FFFFFF; --ink:#16202E; --muted:#5B6778; --rule:#C9D1DB;
-  --act:#2B4BF2; --act-ink:#FFFFFF; --ok:#1E7A4C; --warn:#B4541A; --err:#B3261E;
-  --field:#F4F6F9;
+  --act:#2B4BF2; --act-ink:#FFFFFF; --up:#1E7A4C; --down:#B3261E; --warn:#B4541A; --field:#F4F6F9;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){
   :root{--bg:#10151D;--paper:#1A212C;--ink:#E6EBF2;--muted:#9AA6B6;--rule:#2E3846;
-    --act:#6F86FF;--act-ink:#0D1320;--ok:#5BC08D;--warn:#E39A62;--err:#F08A82;--field:#141A23;}
+    --act:#6F86FF;--act-ink:#0D1320;--up:#5BC08D;--down:#F08A82;--warn:#E39A62;--field:#141A23;}
 }
 *,*::before,*::after{box-sizing:inherit}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.55 "IBM Plex Sans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-  font-variant-numeric:tabular-nums;padding:32px 16px 48px}
-.ticket{max-width:540px;margin:0 auto;background:var(--paper);border:1px solid var(--rule);border-radius:6px;position:relative}
-.ticket::before,.ticket::after{content:"";position:absolute;top:118px;width:18px;height:18px;border-radius:50%;background:var(--bg);border:1px solid var(--rule)}
-.ticket::before{left:-10px}.ticket::after{right:-10px}
-header{padding:22px 24px 20px;border-bottom:1px dashed var(--rule)}
-h1{font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
-.sub{color:var(--muted);font-size:13px;margin:0}
-.route{display:flex;align-items:baseline;gap:12px;margin-top:16px;font-size:28px;font-weight:600;letter-spacing:-.02em}
-.route .arrow{color:var(--muted);font-weight:400}
-.body{padding:20px 24px 8px}
-label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
-.field{margin-bottom:16px}
-input{width:100%;font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:4px;padding:10px 12px}
-input:focus-visible,button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
-.row{display:grid;grid-template-columns:1fr 120px;gap:12px}
-.hint{font-size:12px;color:var(--muted);margin-top:4px}
-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:4px 0 18px;font-size:14px}
-dt{color:var(--muted)} dd{margin:0;text-align:right;overflow-wrap:anywhere}
-ol.steps{list-style:none;margin:0;padding:0 24px 20px;counter-reset:s}
-ol.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--rule)}
-ol.steps li::before{content:counter(s);width:24px;height:24px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;font-size:12px;color:var(--muted)}
-ol.steps li.done::before{content:"✓";background:var(--ok);border-color:var(--ok);color:var(--paper)}
-button{font:inherit;font-weight:500;width:100%;padding:11px 14px;border-radius:4px;cursor:pointer;border:1px solid var(--act);background:transparent;color:var(--act)}
-button.primary{background:var(--act);color:var(--act-ink)}
+  font-variant-numeric:tabular-nums;padding:24px 16px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
+@media (max-width:920px){.wrap{grid-template-columns:1fr}}
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:6px}
+button{font:inherit;font-weight:500;cursor:pointer;border-radius:4px}
 button:disabled{opacity:.4;cursor:not-allowed}
-.warn{color:var(--warn);font-size:13px;margin:0 0 14px}
-.log{border-top:1px dashed var(--rule);padding:14px 24px 20px;font-size:13px;max-height:260px;overflow:auto}
-.log p{margin:0 0 6px;color:var(--muted);overflow-wrap:anywhere}
-.log p.ok{color:var(--ok)} .log p.err{color:var(--err)} .log p.warn{color:var(--warn)}
+input:focus-visible,button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+input{width:100%;font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:4px;padding:9px 12px}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+
+/* 行情 */
+.mkt-head{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:flex-end;padding:18px 20px 14px;border-bottom:1px solid var(--rule)}
+.pair{font-size:14px;color:var(--muted)}
+.pair b{display:block;font-size:22px;color:var(--ink);font-weight:600;letter-spacing:-.01em}
+.last{font-size:34px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.last small{font-size:13px;font-weight:400;color:var(--muted);margin-left:6px}
+.chg{font-size:14px}.chg.up{color:var(--up)}.chg.down{color:var(--down)}
+.intervals{margin-left:auto;display:flex;gap:4px}
+.intervals button{background:transparent;border:1px solid var(--rule);color:var(--muted);padding:4px 10px;font-size:13px}
+.intervals button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+#chart{height:420px;position:relative}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center;padding:20px;pointer-events:none}
+.src{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:14px 20px;border-top:1px solid var(--rule);align-items:end}
+.src select{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:4px;padding:9px 8px}
+.src button{border:1px solid var(--act);background:transparent;color:var(--act);padding:9px 14px}
+@media (max-width:560px){.src{grid-template-columns:1fr 1fr}.src .f{grid-column:1/-1}}
+.status{padding:0 20px 12px;font-size:12px;color:var(--muted)}
+.trades-wrap{border-top:1px solid var(--rule);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 12px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule)}
+th:first-child,td:first-child{text-align:left;padding-left:20px}
+td.buy{color:var(--up)} td.sell{color:var(--down)}
+td a{color:var(--act);text-decoration:none}
+
+/* 下单 */
+.tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+.tabs button{border:0;border-radius:0;background:transparent;color:var(--muted);padding:14px;font-size:16px;border-bottom:3px solid transparent}
+.tabs button[aria-selected="true"][data-side="buy"]{color:var(--up);border-bottom-color:var(--up)}
+.tabs button[aria-selected="true"][data-side="sell"]{color:var(--down);border-bottom-color:var(--down)}
+.tk{padding:16px 20px 4px}
+.wallet{font-size:13px;color:var(--muted);margin:0 0 14px;overflow-wrap:anywhere}
+.field{margin-bottom:14px}
+.amt{position:relative}
+.amt button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--act);font-size:13px;padding:4px 8px}
+.row{display:grid;grid-template-columns:1fr 110px;gap:10px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:2px 0 14px;font-size:14px}
+dt{color:var(--muted)} dd{margin:0;text-align:right;overflow-wrap:anywhere}
+.note{font-size:12.5px;margin:0 0 12px;color:var(--warn)}
+details{font-size:13px;margin:0 0 12px;color:var(--muted)}
+details input{margin-top:6px;font-size:13px}
+ol.steps{list-style:none;margin:0;padding:0 20px 16px;counter-reset:s}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
+ol.steps li::before{content:counter(s);width:22px;height:22px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;font-size:12px;color:var(--muted)}
+ol.steps li.done::before{content:"✓";background:var(--up);border-color:var(--up);color:var(--paper)}
+ol.steps button{width:100%;padding:10px 12px;border:1px solid var(--act);background:transparent;color:var(--act)}
+ol.steps button.go{background:var(--act);color:var(--act-ink)}
+ol.steps button.go.sell{background:var(--down);border-color:var(--down);color:var(--paper)}
+ol.steps button.go.buy{background:var(--up);border-color:var(--up);color:var(--paper)}
+.log{border-top:1px dashed var(--rule);padding:12px 20px 16px;font-size:12.5px;max-height:220px;overflow:auto}
+.log p{margin:0 0 5px;color:var(--muted);overflow-wrap:anywhere}
+.log p.ok{color:var(--up)} .log p.err{color:var(--down)} .log p.warn{color:var(--warn)}
 .log a{color:var(--act)}
-footer{max-width:540px;margin:16px auto 0;font-size:12px;color:var(--muted)}
-@media (max-width:420px){.row{grid-template-columns:1fr}.route{font-size:24px}}
+footer{max-width:1180px;margin:14px auto 0;font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
-<main class="ticket">
-  <header>
-    <h1>买入下单</h1>
-    <p class="sub" id="wallet">钱包未连接</p>
-    <div class="route"><span>NVDA</span><span class="arrow">→</span><span id="tokSym">LABLAB</span></div>
-  </header>
-
-  <div class="body">
-    <div class="field">
-      <label for="token">要买的代币合约</label>
-      <input id="token" value="0x910d9650d5d86f04b060631a723c24f34b021508" spellcheck="false" autocomplete="off">
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="amount">花费 NVDA</label>
-        <input id="amount" value="1.4" inputmode="decimal">
-      </div>
-      <div class="field">
-        <label for="slip">可接受滑点 %</label>
-        <input id="slip" value="3" inputmode="decimal">
+<div class="wrap">
+  <!-- 行情 -->
+  <section class="panel" aria-label="行情">
+    <div class="mkt-head">
+      <div class="pair"><b id="pairName">LABLAB / NVDA</b>联合曲线成交价</div>
+      <div><div class="last" id="lastPrice">—<small>NVDA</small></div><div class="chg" id="chg">&nbsp;</div></div>
+      <div class="intervals" role="group" aria-label="K 线周期">
+        <button data-iv="60" aria-pressed="true">1分</button>
+        <button data-iv="300" aria-pressed="false">5分</button>
+        <button data-iv="900" aria-pressed="false">15分</button>
+        <button data-iv="3600" aria-pressed="false">1时</button>
       </div>
     </div>
+    <div id="chart"><div class="empty" id="chartEmpty">连接钱包或填入 RPC 后点"加载行情"</div></div>
+    <div class="src">
+      <div class="f"><label for="rpc">行情 RPC（可选，留空则用钱包的网络）</label><input id="rpc" placeholder="https://…" spellcheck="false"></div>
+      <div><label for="range">回看</label>
+        <select id="range"><option value="1">1 小时</option><option value="6" selected>6 小时</option><option value="24">24 小时</option><option value="72">3 天</option></select></div>
+      <button id="btnLoad">加载行情</button>
+    </div>
+    <div class="status" id="mktStatus">实时更新：未开始</div>
+    <div class="trades-wrap">
+      <table>
+        <thead><tr><th>时间</th><th>方向</th><th id="thTok">代币数量</th><th>NVDA</th><th>单价</th><th>交易</th></tr></thead>
+        <tbody id="trades"><tr><td colspan="6" style="color:var(--muted)">暂无成交</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
-    <dl>
-      <dt>NVDA 余额</dt><dd id="bal">—</dd>
-      <dt>已授权给路由</dt><dd id="allow">—</dd>
-      <dt>预计收到</dt><dd id="quote">先完成报价</dd>
-      <dt>最少收到</dt><dd id="minOut">—</dd>
-    </dl>
-    <p class="warn" id="chainWarn" hidden></p>
-  </div>
-
-  <ol class="steps">
-    <li id="s1"><button class="primary" id="btnConnect">连接钱包</button></li>
-    <li id="s2"><button id="btnApprove" disabled>授权 NVDA</button></li>
-    <li id="s3"><button id="btnQuote" disabled>模拟报价</button></li>
-    <li id="s4"><button class="primary" id="btnBuy" disabled>发送买入交易</button></li>
-  </ol>
-
-  <div class="log" id="log" aria-live="polite"><p>在下方记录每一步的结果。</p></div>
-</main>
-<footer>路由合约 0xB58fa8E5…C538E。每笔交易都会先在钱包里弹窗确认，本页面不接触你的私钥。先用小金额试。</footer>
+  <!-- 下单 -->
+  <aside class="panel" aria-label="下单">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-side="buy" aria-selected="true">买入</button>
+      <button role="tab" data-side="sell" aria-selected="false">卖出</button>
+    </div>
+    <div class="tk">
+      <p class="wallet" id="wallet">钱包未连接</p>
+      <div class="field">
+        <label for="token">代币合约</label>
+        <input id="token" value="0x910d9650d5d86f04b060631a723c24f34b021508" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="row">
+        <div class="field amt">
+          <label for="amount" id="amtLabel">花费 NVDA</label>
+          <input id="amount" value="0.01" inputmode="decimal">
+          <button id="btnMax" type="button" style="top:calc(50% + 12px)">全部</button>
+        </div>
+        <div class="field">
+          <label for="slip">滑点 %</label>
+          <input id="slip" value="3" inputmode="decimal">
+        </div>
+      </div>
+      <dl>
+        <dt id="balLabel">NVDA 余额</dt><dd id="bal">—</dd>
+        <dt>已授权给路由</dt><dd id="allow">—</dd>
+        <dt>预计收到</dt><dd id="quote">先完成报价</dd>
+        <dt>最少收到</dt><dd id="minOut">—</dd>
+      </dl>
+      <p class="note" id="sellNote" hidden></p>
+      <details>
+        <summary>卖出函数签名</summary>
+        <input id="sellSig" value="sell(uint256,address,uint256,uint256)" spellcheck="false">
+      </details>
+    </div>
+    <ol class="steps">
+      <li id="s1"><button class="go" id="btnConnect">连接钱包</button></li>
+      <li id="s2"><button id="btnApprove" disabled>授权</button></li>
+      <li id="s3"><button id="btnQuote" disabled>模拟报价</button></li>
+      <li id="s4"><button class="go buy" id="btnExec" disabled>发送买入交易</button></li>
+    </ol>
+    <div class="log" id="log" aria-live="polite"><p>每一步的结果显示在这里。</p></div>
+  </aside>
+</div>
+<footer>路由 0xB58fa8E5…C538E · 成交数据来自 0x297E6C91…cBF1 的交易事件。页面不接触私钥，每笔交易都在钱包里确认。代币毕业迁移到 DEX 后，这里的图表和买卖接口不再适用。</footer>
 
 <script>
 const ROUTER = "0xB58fa8E5Db3EEb7B93B113c473811fB8ABdC538E";
 const NVDA   = "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec";
+const LAUNCH = "0x297E6C91DEd9ADeD16A6fa4140fA65B120A9cBF1";
+const TRADE_TOPIC = "0xdda779648bac5c4ec47c9e2b9d18ad2935685d3dcce251f2b0002c1793cf703e";
+const BUY_SIG = "buy(uint256,address,uint256,uint256)";
 const EXPLORER = "https://robin.etherscan.io";
-const ROUTER_ABI = ["function buy(uint256 amountIn_, address tokenAddress_, uint256 amountOutMin_, uint256 deadline_)"];
 const ERC20_ABI = [
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-  "function balanceOf(address) view returns (uint256)",
-  "function allowance(address,address) view returns (uint256)",
+  "function decimals() view returns (uint8)", "function symbol() view returns (string)",
+  "function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)"
 ];
 
 const $ = id => document.getElementById(id);
-let provider, signer, me, nvda, router, nvdaDec = 18, tok, tokDec = 18, tokSym = "?", quoted = null;
+const S = { side: "buy", nvdaDec: 18, tokDec: 18, tokSym: "LABLAB", trades: [], seen: new Set(), anchors: new Map(),
+            bps: 10, lastBlock: 0, iv: 60, timer: null, quoted: null, min: null };
 
+/* ---------- 工具 ---------- */
 function log(msg, cls = "", hash) {
-  const p = document.createElement("p");
-  p.className = cls;
-  p.textContent = msg + " ";
-  if (hash) { const a = document.createElement("a"); a.href = `${EXPLORER}/tx/${hash}`; a.target = "_blank"; a.rel = "noopener"; a.textContent = "在 RobinScan 查看"; p.append(a); }
+  const p = document.createElement("p"); p.className = cls; p.textContent = msg + " ";
+  if (hash) { const a = document.createElement("a"); a.href = `${EXPLORER}/tx/${hash}`; a.target = "_blank"; a.rel = "noopener"; a.textContent = "查看"; p.append(a); }
   $("log").prepend(p);
 }
-const fmt = (v, d) => Number(ethers.formatUnits(v, d)).toLocaleString("zh-CN", { maximumFractionDigits: 6 });
-const amountIn = () => ethers.parseUnits(($("amount").value || "0").trim(), nvdaDec);
+const fmt = (v, d, dp = 6) => Number(ethers.formatUnits(v, d)).toLocaleString("zh-CN", { maximumFractionDigits: dp });
+const fmtP = p => !isFinite(p) || p === 0 ? "—" : (p >= 1 ? p.toFixed(4) : p.toPrecision(4));
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const err = e => e?.shortMessage || e?.reason || e?.message || String(e);
 
-async function loadToken() {
+/* ---------- 图表 ---------- */
+const chart = LightweightCharts.createChart($("chart"), {
+  autoSize: true,
+  layout: { background: { color: "transparent" }, textColor: cssVar("--muted"), fontFamily: "IBM Plex Sans, system-ui, sans-serif" },
+  grid: { vertLines: { color: cssVar("--rule") + "55" }, horzLines: { color: cssVar("--rule") + "55" } },
+  rightPriceScale: { borderColor: cssVar("--rule") },
+  timeScale: { borderColor: cssVar("--rule"), timeVisible: true, secondsVisible: false },
+  localization: { priceFormatter: fmtP, timeFormatter: t => new Date(t * 1000).toLocaleString("zh-CN") },
+});
+const candles = chart.addCandlestickSeries({
+  upColor: cssVar("--up"), downColor: cssVar("--down"), borderVisible: false,
+  wickUpColor: cssVar("--up"), wickDownColor: cssVar("--down"),
+  priceFormat: { type: "custom", formatter: fmtP, minMove: 1e-12 },
+});
+const vol = chart.addHistogramSeries({ priceScaleId: "", priceFormat: { type: "volume" } });
+vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+function render() {
+  const tr = S.trades;
+  $("chartEmpty").style.display = tr.length ? "none" : "grid";
+  if (!tr.length) { candles.setData([]); vol.setData([]); return; }
+  const bars = new Map();
+  for (const t of tr) {
+    const k = Math.floor(t.ts / S.iv) * S.iv;
+    const b = bars.get(k);
+    if (!b) bars.set(k, { time: k, open: t.price, high: t.price, low: t.price, close: t.price, v: t.nvda });
+    else { b.high = Math.max(b.high, t.price); b.low = Math.min(b.low, t.price); b.close = t.price; b.v += t.nvda; }
+  }
+  const arr = [...bars.values()].sort((a, b) => a.time - b.time);
+  candles.setData(arr.map(({ v, ...c }) => c));
+  vol.setData(arr.map(b => ({ time: b.time, value: b.v, color: (b.close >= b.open ? cssVar("--up") : cssVar("--down")) + "80" })));
+
+  const last = tr[tr.length - 1].price, first = tr[0].price, pct = (last / first - 1) * 100;
+  $("lastPrice").innerHTML = `${fmtP(last)}<small>NVDA</small>`;
+  $("chg").textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%（回看区间）`;
+  $("chg").className = "chg " + (pct >= 0 ? "up" : "down");
+
+  const rows = tr.slice(-20).reverse().map(t => `<tr>
+    <td>${new Date(t.ts * 1000).toLocaleTimeString("zh-CN")}</td>
+    <td class="${t.side}">${t.side === "buy" ? "买" : "卖"}</td>
+    <td>${t.tok.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}</td>
+    <td>${t.nvda.toLocaleString("zh-CN", { maximumFractionDigits: 4 })}</td>
+    <td>${fmtP(t.price)}</td>
+    <td><a href="${EXPLORER}/tx/${t.hash}" target="_blank" rel="noopener">${t.hash.slice(0, 8)}…</a></td></tr>`).join("");
+  $("trades").innerHTML = rows;
+}
+
+document.querySelectorAll(".intervals button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".intervals button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  S.iv = +b.dataset.iv; render(); chart.timeScale().fitContent();
+});
+
+/* ---------- 行情数据 ---------- */
+function readProv() {
+  const url = $("rpc").value.trim();
+  if (url) return S.rpcProv && S.rpcUrl === url ? S.rpcProv : (S.rpcUrl = url, S.rpcProv = new ethers.JsonRpcProvider(url));
+  return S.provider;
+}
+async function blockTs(rp, bn) {
+  if (S.anchors.has(bn)) return S.anchors.get(bn);
+  const b = await rp.getBlock(bn); S.anchors.set(bn, b.timestamp); return b.timestamp;
+}
+function interpTs(bn) {
+  let lo = null, hi = null;
+  for (const [k, v] of S.anchors) { if (k <= bn && (!lo || k > lo[0])) lo = [k, v]; if (k >= bn && (!hi || k < hi[0])) hi = [k, v]; }
+  if (lo && hi && hi[0] !== lo[0]) return lo[1] + (bn - lo[0]) * (hi[1] - lo[1]) / (hi[0] - lo[0]);
+  const a = lo || hi; return a ? a[1] + (bn - a[0]) / S.bps : Date.now() / 1000;
+}
+function parseLog(l) {
+  const hex = l.data.slice(2);
+  if (hex.length < 64 * 6) return null;
+  const w = i => BigInt("0x" + hex.slice(i * 64, i * 64 + 64));
+  const token = "0x" + hex.slice(4 * 64 + 24, 5 * 64);
+  if (token.toLowerCase() !== $("token").value.trim().toLowerCase()) return null;
+  const buy = w(1) > 0n;
+  const tokAmt = buy ? w(1) : w(0), nvdaAmt = buy ? w(2) : w(3);
+  if (tokAmt === 0n || nvdaAmt === 0n) return null;
+  const tok = Number(ethers.formatUnits(tokAmt, S.tokDec)), nvda = Number(ethers.formatUnits(nvdaAmt, S.nvdaDec));
+  return { block: l.blockNumber, idx: l.index ?? l.logIndex, hash: l.transactionHash, side: buy ? "buy" : "sell", tok, nvda, price: nvda / tok };
+}
+async function fetchRange(rp, from, to, onProgress) {
+  let step = 50000, cur = from; const out = [];
+  while (cur <= to) {
+    const end = Math.min(to, cur + step - 1);
+    let logs;
+    try { logs = await rp.getLogs({ address: LAUNCH, topics: [TRADE_TOPIC], fromBlock: cur, toBlock: end }); }
+    catch (e) { if (step > 200) { step = Math.floor(step / 2); continue; } throw e; }
+    const parsed = logs.map(parseLog).filter(Boolean);
+    if (parsed.length) {
+      const blocks = [...new Set(parsed.map(p => p.block))];
+      if (blocks.length <= 25) await Promise.all(blocks.map(b => blockTs(rp, b)));
+      else { await blockTs(rp, cur); await blockTs(rp, end); }
+      out.push(...parsed);
+    }
+    cur = end + 1;
+    onProgress?.((cur - from) / (to - from + 1));
+  }
+  return out;
+}
+function addTrades(list) {
+  let added = 0;
+  for (const t of list) {
+    const key = t.hash + ":" + t.idx; if (S.seen.has(key)) continue;
+    S.seen.add(key); t.ts = S.anchors.get(t.block) ?? interpTs(t.block); S.trades.push(t); added++;
+  }
+  S.trades.sort((a, b) => a.block - b.block || a.idx - b.idx);
+  return added;
+}
+
+async function loadMarket() {
+  const rp = readProv();
+  if (!rp) { log("先连接钱包，或填一个 RPC 地址。", "err"); return; }
+  clearInterval(S.timer); $("btnLoad").disabled = true;
+  S.trades = []; S.seen.clear(); render();
+  try {
+    await loadTokenMeta(rp);
+    const latest = await rp.getBlockNumber();
+    const probe = Math.max(0, latest - 20000);
+    const [tL, tP] = await Promise.all([blockTs(rp, latest), blockTs(rp, probe)]);
+    S.bps = (latest - probe) / Math.max(1, tL - tP);
+    const from = Math.max(0, latest - Math.ceil(+$("range").value * 3600 * S.bps));
+    $("mktStatus").textContent = `正在读取历史成交… 约 ${S.bps.toFixed(1)} 块/秒`;
+    const list = await fetchRange(rp, from, latest, f => $("mktStatus").textContent = `正在读取历史成交… ${Math.round(f * 100)}%`);
+    addTrades(list); S.lastBlock = latest; render(); chart.timeScale().fitContent();
+    $("mktStatus").textContent = `已加载 ${S.trades.length} 笔成交。实时更新中，每 4 秒刷新。`;
+    if (!S.trades.length) log("回看区间内没有找到这个代币的成交。换个代币或拉长回看时间试试。", "warn");
+    S.timer = setInterval(poll, 4000);
+  } catch (e) { log("读取行情失败：" + err(e), "err"); $("mktStatus").textContent = "读取失败，查看右侧记录。"; }
+  finally { $("btnLoad").disabled = false; }
+}
+let polling = false;
+async function poll() {
+  if (polling) return; polling = true;
+  try {
+    const rp = readProv(); const latest = await rp.getBlockNumber();
+    if (latest > S.lastBlock) {
+      const n = addTrades(await fetchRange(rp, S.lastBlock + 1, latest));
+      S.lastBlock = latest; if (n) render();
+      $("mktStatus").textContent = `已加载 ${S.trades.length} 笔成交。最新区块 ${latest}，${new Date().toLocaleTimeString("zh-CN")} 更新。`;
+    }
+  } catch (e) { $("mktStatus").textContent = "实时更新出错，稍后自动重试：" + err(e); }
+  finally { polling = false; }
+}
+$("btnLoad").onclick = loadMarket;
+
+/* ---------- 钱包与下单 ---------- */
+async function loadTokenMeta(rp) {
   const addr = $("token").value.trim();
-  if (!ethers.isAddress(addr)) { log("代币地址格式不对。", "err"); return false; }
-  tok = new ethers.Contract(addr, ERC20_ABI, provider);
-  try { [tokDec, tokSym] = await Promise.all([tok.decimals(), tok.symbol()]); tokDec = Number(tokDec); }
-  catch { log("读不到这个代币的 symbol/decimals，确认地址和网络是否正确。", "err"); return false; }
-  $("tokSym").textContent = tokSym;
-  return true;
+  if (!ethers.isAddress(addr)) throw new Error("代币地址格式不对");
+  const t = new ethers.Contract(addr, ERC20_ABI, rp);
+  const n = new ethers.Contract(NVDA, ERC20_ABI, rp);
+  const [d, s, nd] = await Promise.all([t.decimals(), t.symbol(), n.decimals()]);
+  S.tokDec = Number(d); S.tokSym = s; S.nvdaDec = Number(nd);
+  $("pairName").textContent = `${s} / NVDA`; $("thTok").textContent = s;
+  if (S.side === "sell") $("amtLabel").textContent = `卖出 ${s}`;
 }
 
-async function refresh() {
-  const [bal, allow] = await Promise.all([nvda.balanceOf(me), nvda.allowance(me, ROUTER)]);
-  $("bal").textContent = fmt(bal, nvdaDec);
-  $("allow").textContent = fmt(allow, nvdaDec);
-  let need = 0n; try { need = amountIn(); } catch {}
-  const enough = allow >= need && need > 0n;
-  $("s2").classList.toggle("done", enough);
-  $("btnApprove").disabled = enough;
-  $("btnQuote").disabled = !enough;
-  if (bal < need) log("NVDA 余额不足以支付这笔金额。", "warn");
+function routerFor(side) {
+  const sig = side === "buy" ? BUY_SIG : $("sellSig").value.trim();
+  const c = new ethers.Contract(ROUTER, [`function ${sig}`], S.signer);
+  return c.getFunction(sig);
 }
+const spendToken = () => new ethers.Contract(S.side === "buy" ? NVDA : $("token").value.trim(), ERC20_ABI, S.signer);
+const spendDec = () => S.side === "buy" ? S.nvdaDec : S.tokDec;
+const outDec = () => S.side === "buy" ? S.tokDec : S.nvdaDec;
+const outSym = () => S.side === "buy" ? S.tokSym : "NVDA";
+const amountIn = () => ethers.parseUnits(($("amount").value || "0").trim(), spendDec());
 
 function resetQuote() {
-  quoted = null;
-  $("quote").textContent = "先完成报价"; $("minOut").textContent = "—";
-  $("s3").classList.remove("done"); $("btnBuy").disabled = true;
+  S.quoted = S.min = null; $("quote").textContent = "先完成报价"; $("minOut").textContent = "—";
+  $("s3").classList.remove("done"); $("s4").classList.remove("done"); $("btnExec").disabled = true;
+}
+async function refreshBalances() {
+  if (!S.me) return;
+  const t = spendToken();
+  const [bal, allow] = await Promise.all([t.balanceOf(S.me), t.allowance(S.me, ROUTER)]);
+  S.bal = bal;
+  $("bal").textContent = fmt(bal, spendDec());
+  $("allow").textContent = fmt(allow, spendDec(), 2);
+  let need = 0n; try { need = amountIn(); } catch {}
+  const ok = need > 0n && allow >= need;
+  $("s2").classList.toggle("done", ok); $("btnApprove").disabled = ok; $("btnQuote").disabled = !ok;
+  $("btnApprove").textContent = `授权 ${S.side === "buy" ? "NVDA" : S.tokSym}`;
 }
 
+async function checkSellSig() {
+  const code = S.routerCode || "";
+  const sel = ethers.id($("sellSig").value.trim()).slice(2, 10);
+  const buySel = "706910ff";
+  const note = $("sellNote");
+  if (!code) { note.hidden = true; return; }
+  if (code.includes(buySel) && !code.includes(sel)) {
+    note.hidden = false; note.textContent = `路由合约字节码里没找到卖出函数选择器 0x${sel}，签名可能不对。请在 RobinScan 查看合约的 sell 函数并修改下方签名。`;
+  } else if (!code.includes(buySel)) {
+    note.hidden = false; note.textContent = "路由合约可能是代理合约，无法从字节码核对卖出签名。报价会先模拟调用，模拟失败就不要发送。";
+  } else note.hidden = true;
+}
+
+function setSide(side) {
+  S.side = side;
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.side === side));
+  $("amtLabel").textContent = side === "buy" ? "花费 NVDA" : `卖出 ${S.tokSym}`;
+  $("balLabel").textContent = side === "buy" ? "NVDA 余额" : `${S.tokSym} 余额`;
+  $("btnExec").textContent = side === "buy" ? "发送买入交易" : "发送卖出交易";
+  $("btnExec").className = "go " + side;
+  $("amount").value = "";
+  resetQuote(); refreshBalances().catch(() => {});
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setSide(b.dataset.side));
+$("btnMax").onclick = () => { if (S.bal != null) { $("amount").value = ethers.formatUnits(S.bal, spendDec()); resetQuote(); refreshBalances(); } };
+
 $("btnConnect").onclick = async () => {
-  if (!window.ethereum) { log("没检测到浏览器钱包。请安装 MetaMask 等钱包，并通过 http://localhost 打开此页面。", "err"); return; }
+  if (!window.ethereum) { log("没检测到浏览器钱包。安装 MetaMask 等钱包，并通过 http://localhost 打开此页面。", "err"); return; }
   try {
-    provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    signer = await provider.getSigner(); me = await signer.getAddress();
-    const net = await provider.getNetwork();
-    $("wallet").textContent = `${me.slice(0, 6)}…${me.slice(-4)} · 链 ID ${net.chainId}`;
-    const code = await provider.getCode(ROUTER);
-    if (code === "0x") {
-      $("chainWarn").hidden = false;
-      $("chainWarn").textContent = "当前网络上找不到路由合约，钱包可能没切到 Robinhood Chain 主网。切换后刷新页面。";
-      log("当前网络上路由合约不存在。", "err"); return;
-    }
-    nvda = new ethers.Contract(NVDA, ERC20_ABI, signer);
-    router = new ethers.Contract(ROUTER, ROUTER_ABI, signer);
-    nvdaDec = Number(await nvda.decimals());
-    if (!(await loadToken())) return;
+    S.provider = new ethers.BrowserProvider(window.ethereum);
+    await S.provider.send("eth_requestAccounts", []);
+    S.signer = await S.provider.getSigner(); S.me = await S.signer.getAddress();
+    const net = await S.provider.getNetwork();
+    $("wallet").textContent = `${S.me.slice(0, 6)}…${S.me.slice(-4)} · 链 ID ${net.chainId}`;
+    S.routerCode = await S.provider.getCode(ROUTER);
+    if (S.routerCode === "0x") { log("当前网络上找不到路由合约，请把钱包切到 Robinhood Chain 主网后刷新。", "err"); S.routerCode = ""; return; }
+    await loadTokenMeta(S.provider);
     $("s1").classList.add("done"); $("btnConnect").textContent = "已连接";
-    await refresh();
+    await checkSellSig(); await refreshBalances();
     log("钱包已连接。", "ok");
     window.ethereum.on?.("accountsChanged", () => location.reload());
     window.ethereum.on?.("chainChanged", () => location.reload());
-  } catch (e) { log("连接失败：" + (e.shortMessage || e.message), "err"); }
+    if (!S.trades.length) loadMarket();
+  } catch (e) { log("连接失败：" + err(e), "err"); }
 };
 
 $("btnApprove").onclick = async () => {
   try {
-    const amt = amountIn();
-    $("btnApprove").disabled = true;
-    log(`请求授权 ${fmt(amt, nvdaDec)} NVDA（仅本次金额）…`);
-    const tx = await nvda.approve(ROUTER, amt);
-    log("授权交易已发送，等待确认…", "", tx.hash);
-    await tx.wait(); log("授权完成。", "ok", tx.hash);
-    await refresh();
-  } catch (e) { log("授权失败：" + (e.shortMessage || e.message), "err"); $("btnApprove").disabled = false; }
+    const amt = amountIn(); $("btnApprove").disabled = true;
+    log(`请求授权 ${fmt(amt, spendDec())}（仅本次金额）…`);
+    const tx = await spendToken().approve(ROUTER, amt);
+    log("授权已发送，等待确认…", "", tx.hash); await tx.wait();
+    log("授权完成。", "ok", tx.hash); await refreshBalances();
+  } catch (e) { log("授权失败：" + err(e), "err"); $("btnApprove").disabled = false; }
 };
 
-// eth_call 模拟：amountOutMin 不超过实际成交量时调用会成功，
-// 用二分搜索找到临界值，即当前能拿到的数量。
-async function simulate(minOut) {
-  try { await router.buy.staticCall(amountIn(), tok.target, minOut, deadline()); return true; }
-  catch { return false; }
+// 模拟：amountOutMin 不超过实际可得数量时调用成功，二分搜索出临界值即为报价
+async function simulate(fn, amt, min) {
+  try { await fn.staticCall(amt, $("token").value.trim(), min, deadline()); return true; } catch { return false; }
 }
-
 $("btnQuote").onclick = async () => {
   $("btnQuote").disabled = true; resetQuote();
   try {
-    if (!(await loadToken())) return;
-    log("模拟调用中（会发起若干次只读请求，不花 gas）…");
-    if (!(await simulate(0n))) {
-      let reason = "";
-      try { await router.buy.staticCall(amountIn(), tok.target, 0n, deadline()); } catch (e) { reason = e.shortMessage || e.reason || e.message; }
-      log("即使最少收到设为 0 模拟也失败了：" + reason, "err"); return;
-    }
-    let lo = 0n, hi = 10n ** BigInt(tokDec);
-    for (let i = 0; i < 200 && await simulate(hi); i++) { lo = hi; hi *= 2n; }
+    const fn = routerFor(S.side), amt = amountIn();
+    log("模拟调用中（只读，不花 gas）…");
+    try { await fn.staticCall(amt, $("token").value.trim(), 0n, deadline()); }
+    catch (e) { log(`最少收到设为 0 时模拟也失败：${err(e)}` + (S.side === "sell" ? "。卖出签名可能不对。" : ""), "err"); return; }
+    let lo = 0n, hi = 10n ** BigInt(outDec());
+    for (let i = 0; i < 200 && await simulate(fn, amt, hi); i++) { lo = hi; hi *= 2n; }
     for (let i = 0; i < 80 && hi - lo > 1n; i++) {
-      if (lo > 0n && (hi - lo) * 100000n <= lo) break;       // 精度到 0.001%
-      const mid = (lo + hi) / 2n;
-      (await simulate(mid)) ? lo = mid : hi = mid;
+      if (lo > 0n && (hi - lo) * 100000n <= lo) break;
+      const mid = (lo + hi) / 2n; (await simulate(fn, amt, mid)) ? lo = mid : hi = mid;
     }
     const slip = Math.min(Math.max(parseFloat($("slip").value) || 0, 0), 50);
-    quoted = lo;
-    const min = lo * BigInt(Math.round((100 - slip) * 100)) / 10000n;
-    $("quote").textContent = `${fmt(lo, tokDec)} ${tokSym}`;
-    $("minOut").textContent = `${fmt(min, tokDec)} ${tokSym}`;
-    $("minOut").dataset.raw = min.toString();
-    $("s3").classList.add("done"); $("btnBuy").disabled = false;
-    log(`报价完成：约 ${fmt(lo, tokDec)} ${tokSym}，滑点 ${slip}% 后最少 ${fmt(min, tokDec)}。报价随价格变化，尽快下单。`, "ok");
-  } catch (e) { log("报价出错：" + (e.shortMessage || e.message), "err"); }
+    S.quoted = lo; S.min = lo * BigInt(Math.round((100 - slip) * 100)) / 10000n;
+    $("quote").textContent = `${fmt(lo, outDec())} ${outSym()}`;
+    $("minOut").textContent = `${fmt(S.min, outDec())} ${outSym()}`;
+    $("s3").classList.add("done"); $("btnExec").disabled = false;
+    log(`报价：约 ${fmt(lo, outDec())} ${outSym()}，滑点 ${slip}% 后最少 ${fmt(S.min, outDec())}。价格会变，尽快发送。`, "ok");
+  } catch (e) { log("报价出错：" + err(e), "err"); }
   finally { $("btnQuote").disabled = false; }
 };
 
-$("btnBuy").onclick = async () => {
-  if (quoted === null) return;
-  const min = BigInt($("minOut").dataset.raw);
-  $("btnBuy").disabled = true;
+$("btnExec").onclick = async () => {
+  if (S.min == null) return;
+  $("btnExec").disabled = true;
   try {
-    const before = await tok.balanceOf(me);
-    log(`发送买入：${$("amount").value} NVDA，最少 ${fmt(min, tokDec)} ${tokSym}…`);
-    const tx = await router.buy(amountIn(), tok.target, min, deadline());
-    log("买入交易已发送，等待确认…", "", tx.hash);
+    const out = new ethers.Contract(S.side === "buy" ? $("token").value.trim() : NVDA, ERC20_ABI, S.signer);
+    const before = await out.balanceOf(S.me);
+    const tx = await routerFor(S.side)(amountIn(), $("token").value.trim(), S.min, deadline());
+    log(`${S.side === "buy" ? "买入" : "卖出"}已发送，等待确认…`, "", tx.hash);
     const r = await tx.wait();
-    const got = (await tok.balanceOf(me)) - before;
-    log(`成交，区块 ${r.blockNumber}，实际收到 ${fmt(got, tokDec)} ${tokSym}。`, "ok", tx.hash);
-    $("s4").classList.add("done");
-    resetQuote(); await refresh();
-  } catch (e) { log("买入失败：" + (e.shortMessage || e.message), "err"); $("btnBuy").disabled = false; }
+    const got = (await out.balanceOf(S.me)) - before;
+    log(`成交，区块 ${r.blockNumber}，收到 ${fmt(got, outDec())} ${outSym()}。`, "ok", tx.hash);
+    $("s4").classList.add("done"); S.quoted = S.min = null; $("s3").classList.remove("done");
+    await refreshBalances(); poll();
+  } catch (e) { log("交易失败：" + err(e), "err"); $("btnExec").disabled = false; }
 };
 
-["amount", "token", "slip"].forEach(id => $(id).addEventListener("input", () => { if (me) { resetQuote(); if (id !== "slip") refresh().catch(() => {}); } }));
+$("amount").addEventListener("input", () => { resetQuote(); refreshBalances().catch(() => {}); });
+$("slip").addEventListener("input", resetQuote);
+$("sellSig").addEventListener("input", () => { resetQuote(); checkSellSig(); });
+$("token").addEventListener("change", () => { resetQuote(); if (S.provider || $("rpc").value.trim()) loadMarket().then(refreshBalances).catch(() => {}); });
 </script>
 </body>
 </html>
